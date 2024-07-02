@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat App</title>
+    <link rel="stylesheet" href="/css/chatapp.css">
+</head>
+<body>
+    <h2>Chat App</h2>
+    <div id="userList">
+        <!-- Logged in users will be added here -->
+    </div>
+    <div id="chatbox">
+        <!-- Chat messages will be added here -->
+    </div>
+    <div id="userInput">
+        <input type="text" id="messageInput" placeholder="Type your message here..." />
+        <button id="sendButton">Send</button>
+    </div>
+    <script>
+        let lastMessageId = 0;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('Please login first');
+                window.location.href = '/login.html';
+                return;
+            }
+
+            const fetchUsers = async () => {
+                try {
+                    const response = await axios.get('http://localhost:5000/user/loggedin', {
+                        headers: { Authorization: token }
+                    });
+                    const users = response.data.users;
+                    const userListDiv = document.getElementById('userList');
+                    if (users.length > 1) {
+                        userListDiv.innerHTML = '<h3>Logged in users:</h3>';
+                        users.forEach(user => {
+                            const userDiv = document.createElement('div');
+                            userDiv.textContent = user.name;
+                            userListDiv.appendChild(userDiv);
+                        });
+                    }
+                } catch (err) {
+                    console.error('Error fetching users:', err);
+                }
+            };
+
+            fetchUsers();
+
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+
+            sendButton.addEventListener('click', async () => {
+                const message = messageInput.value;
+                if (message.trim() === '') {
+                    return;
+                }
+                try {
+                    const response = await axios.post('http://localhost:5000/chat/message', { message }, {
+                        headers: { Authorization: token }
+                    });
+                    const newMessage = response.data.newMessage;
+                    messageInput.value = '';
+                    saveMessageToLocalStorage(newMessage); // Save the new message to local storage
+                    fetchMessages(); // Fetch messages to update chatbox (avoiding direct add to chatbox)
+                } catch (err) {
+                    console.log('Error sending message:', err);
+                }
+            });
+
+            const loadMessagesFromLocalStorage = () => {
+                const storedMessages = JSON.parse(localStorage.getItem('chatMessages')) || [];
+                const chatbox = document.getElementById('chatbox');
+                chatbox.innerHTML = '';  // Clear chatbox before loading
+                storedMessages.forEach(msg => {
+                    addMessageToChatbox(msg);
+                    lastMessageId = Math.max(lastMessageId, msg.id);
+                });
+            };
+
+            const saveMessageToLocalStorage = (message) => {
+                let storedMessages = JSON.parse(localStorage.getItem('chatMessages')) || [];
+                if (!isMessageStored(storedMessages, message)) {
+                    storedMessages = [...storedMessages, message].slice(-10); // Keep only the last 10 messages
+                    localStorage.setItem('chatMessages', JSON.stringify(storedMessages));
+                }
+            };
+
+            const isMessageStored = (messages, newMessage) => {
+                return messages.some(msg => msg.id === newMessage.id);
+            };
+
+            const fetchMessages = async () => {
+                try {
+                    const response = await axios.get(`http://localhost:5000/chat/messages?lastMessageId=${lastMessageId}`, {
+                        headers: { Authorization: token }
+                    });
+                    const messages = response.data.messages;
+                    if (messages.length > 0) {
+                        messages.forEach(msg => {
+                            if (msg.id > lastMessageId) {
+                                addMessageToChatbox(msg);
+                                saveMessageToLocalStorage(msg);
+                                lastMessageId = msg.id;
+                            }
+                        });
+                    }
+                } catch (err) {
+                    console.error('Error fetching messages:', err);
+                }
+            };
+
+            const addMessageToChatbox = (message) => {
+                const chatbox = document.getElementById('chatbox');
+                const messageDiv = document.createElement('div');
+                const userName = message.user ? message.user.name : 'Unknown';
+                messageDiv.textContent = `${userName}: ${message.content}`;
+                chatbox.appendChild(messageDiv);
+            };
+
+            loadMessagesFromLocalStorage();
+            fetchMessages();
+            setInterval(fetchMessages, 1000); // Refresh messages every second
+        });
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.2/axios.min.js" integrity="sha512-JSCFHhKDilTRRXe9ak/FJ28dcpOJxzQaCd3Xg8MyF6XFjODhy/YMCM8HW0TFDckNHWUewW+kfvhin43hKtJxAw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</body>
+</html>
